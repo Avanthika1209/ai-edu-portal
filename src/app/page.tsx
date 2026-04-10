@@ -9,7 +9,7 @@ interface Message { role: Role; text: string; }
 interface Conversation { _id?: string; id?: string; title: string; messages: Message[]; updatedAt?: string; }
 interface QuizQ { q: string; options: string[]; answer: string; explanation?: string; }
 interface QuizResult { score: number; total: number; details: { q: string; chosen: string; correct: string; ok: boolean; explanation?: string }[]; }
-interface UserProfile { id: string; name: string; email: string; avatar: string; profilePic: string; purpose: string; }
+interface UserProfile { id: string; name: string; email: string; avatar: string; profilePic: string; purpose: string; streak?: number; }
 interface TopicStat { topic: string; asked: number; correct: number; }
 
 const AVATARS = ['🧑','👩','👨','🧒','👧','🧑‍💻','👩‍💻','👨‍🎓','👩‍🎓','🦊','🐼','🦁','🐯','🦋','🌟'];
@@ -158,37 +158,6 @@ function timeAgo(d: string) {
   if (diff < 1440) return `${Math.floor(diff / 60)}h ago`; return `${Math.floor(diff / 1440)}d ago`;
 }
 
-// ── STREAK HELPER ──
-function getStreak(): number {
-  try {
-    const raw = localStorage.getItem('eduai_streak');
-    if (!raw) return 0;
-    const { streak, lastDate } = JSON.parse(raw);
-    const today = new Date().toDateString();
-    const yesterday = new Date(Date.now() - 86400000).toDateString();
-    if (lastDate === today) return streak;
-    if (lastDate === yesterday) return streak;
-    return 0;
-  } catch { return 0; }
-}
-
-function updateStreak(): number {
-  try {
-    const today = new Date().toDateString();
-    const yesterday = new Date(Date.now() - 86400000).toDateString();
-    const raw = localStorage.getItem('eduai_streak');
-    let streak = 1;
-    if (raw) {
-      const { streak: s, lastDate } = JSON.parse(raw);
-      if (lastDate === today) return s;
-      if (lastDate === yesterday) streak = s + 1;
-      else streak = 1;
-    }
-    localStorage.setItem('eduai_streak', JSON.stringify({ streak, lastDate: today }));
-    return streak;
-  } catch { return 1; }
-}
-
 // ── AUTH PAGE ──
 function AuthPage({ onLogin }: { onLogin: (u: UserProfile) => void }) {
   const [mode, setMode] = useState<'login' | 'signup'>('login');
@@ -226,10 +195,10 @@ function AuthPage({ onLogin }: { onLogin: (u: UserProfile) => void }) {
         setStep('otp');
         setSuccess(`OTP sent to ${email}! Check your inbox.`);
       } else {
-        const res = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: pass }) });
+        const res = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: pass, tzOffsetMinutes: new Date().getTimezoneOffset() }) });
         const data = await res.json();
         if (data.error) { setError(data.error); setLoading(false); return; }
-        onLogin({ id: data.id, name: data.name, email: data.email, avatar: data.avatar || '🧑', profilePic: data.profilePic || '', purpose: data.purpose || '' });
+        onLogin({ id: data.id, name: data.name, email: data.email, avatar: data.avatar || '🧑', profilePic: data.profilePic || '', purpose: data.purpose || '', streak: data.streak || 1 });
       }
     } catch { setError('Connection error. Please try again.'); }
     setLoading(false);
@@ -240,11 +209,11 @@ function AuthPage({ onLogin }: { onLogin: (u: UserProfile) => void }) {
     if (otpInput.trim() !== otp.trim()) { setError('Incorrect OTP. Please try again.'); return; }
     setLoading(true);
     try {
-      const res = await fetch('/api/auth/signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, email, password: pass, avatar: '🧑', purpose: '' }) });
+      const res = await fetch('/api/auth/signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, email, password: pass, avatar: '🧑', purpose: '', tzOffsetMinutes: new Date().getTimezoneOffset() }) });
       const data = await res.json();
       if (data.error) { setError(data.error); setLoading(false); return; }
       setSuccess('Account created! Now choose your purpose:');
-      setPendingUser({ id: data.id, name: data.name, email: data.email, avatar: data.avatar, profilePic: '', purpose: '' });
+      setPendingUser({ id: data.id, name: data.name, email: data.email, avatar: data.avatar, profilePic: '', purpose: '', streak: data.streak || 1 });
       setStep('purpose');
     } catch { setError('Connection error. Please try again.'); }
     setLoading(false);
@@ -354,12 +323,13 @@ function AuthPage({ onLogin }: { onLogin: (u: UserProfile) => void }) {
 }
 
 // ── PROFILE MODAL ──
-function ProfileModal({ user, onUpdate, onClose, t }: { user: UserProfile; onUpdate: (u: UserProfile) => void; onClose: () => void; t: typeof themes.light }) {
+function ProfileModal({ user, onUpdate, onClose, onDeleteAccount, t }: { user: UserProfile; onUpdate: (u: UserProfile) => void; onClose: () => void; onDeleteAccount: () => void; t: typeof themes.light }) {
   const [name, setName] = useState(user.name);
   const [avatar, setAvatar] = useState(user.avatar);
   const [profilePic, setProfilePic] = useState(user.profilePic || '');
   const [tab, setTab] = useState<'avatar' | 'photo'>('avatar');
   const [saving, setSaving] = useState(false);
+  const [securityMode, setSecurityMode] = useState<'change' | 'delete' | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLVideoElement>(null);
   const [streaming, setStreaming] = useState(false);
@@ -446,6 +416,136 @@ function ProfileModal({ user, onUpdate, onClose, t }: { user: UserProfile; onUpd
           <button onClick={onClose} style={{ flex: 1, padding: '11px', border: `1px solid ${t.border}`, borderRadius: 10, background: 'transparent', color: t.text2, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>Cancel</button>
           <button onClick={handleSave} disabled={saving} style={{ flex: 1, padding: '11px', background: 'linear-gradient(135deg,#3b82f6,#2563eb)', border: 'none', borderRadius: 10, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600 }}>{saving ? 'Saving...' : 'Save'}</button>
         </div>
+        <div style={{ marginTop: 18, paddingTop: 14, borderTop: `1px solid ${t.border}` }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: t.text2, marginBottom: 8 }}>SECURITY</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => setSecurityMode('change')} style={{ flex: 1, padding: '10px', border: `1px solid ${t.border}`, borderRadius: 10, background: t.bg3, cursor: 'pointer', fontSize: 12, color: t.text, fontFamily: 'inherit' }}>Change Password</button>
+            <button onClick={() => setSecurityMode('delete')} style={{ flex: 1, padding: '10px', border: '1px solid #fecaca', borderRadius: 10, background: '#fef2f2', cursor: 'pointer', fontSize: 12, color: '#dc2626', fontFamily: 'inherit', fontWeight: 600 }}>Delete Account</button>
+          </div>
+        </div>
+      </div>
+      {securityMode && (
+        <SecurityModal
+          mode={securityMode}
+          email={user.email}
+          onClose={() => setSecurityMode(null)}
+          onDeleted={() => { setSecurityMode(null); onDeleteAccount(); }}
+          t={t}
+        />
+      )}
+    </div>
+  );
+}
+
+function SecurityModal({ mode, email, onClose, onDeleted, t }: { mode: 'change' | 'delete'; email: string; onClose: () => void; onDeleted: () => void; t: typeof themes.light }) {
+  const [otpSent, setOtpSent] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [newPass, setNewPass] = useState('');
+  const [confirmPass, setConfirmPass] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const pw = newPass ? checkPassword(newPass) : null;
+
+  const requestOtp = async () => {
+    setError(''); setSuccess(''); setLoading(true);
+    try {
+      const res = await fetch('/api/auth/otp/request', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, purpose: mode === 'change' ? 'change_password' : 'delete_account' }) });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+      setOtpSent(true);
+      setSuccess('OTP sent to your email.');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to send OTP';
+      setError(msg);
+    }
+    setLoading(false);
+  };
+
+  const submitChange = async () => {
+    setError(''); setSuccess('');
+    if (!otp || !newPass || !confirmPass) { setError('Please fill all fields'); return; }
+    if (newPass !== confirmPass) { setError('Passwords do not match'); return; }
+    if (!pw || pw.score < 3) { setError('Password too weak'); return; }
+    setLoading(true);
+    try {
+      const res = await fetch('/api/auth/change-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, otp, newPassword: newPass }) });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+      setSuccess('Password changed successfully.');
+      setTimeout(onClose, 1200);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to change password';
+      setError(msg);
+    }
+    setLoading(false);
+  };
+
+  const submitDelete = async () => {
+    setError(''); setSuccess('');
+    if (confirmDelete !== 'DELETE') { setError('Type DELETE to confirm'); return; }
+    if (!otp) { setError('Enter OTP'); return; }
+    setLoading(true);
+    try {
+      const res = await fetch('/api/auth/delete-account', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, otp }) });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+      setSuccess('Account deleted.');
+      setTimeout(onDeleted, 800);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to delete account';
+      setError(msg);
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={onClose}>
+      <div style={{ background: t.card, borderRadius: 20, padding: 24, width: 420, border: `1px solid ${t.border}`, boxShadow: '0 24px 64px rgba(0,0,0,0.5)', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+        <h3 style={{ color: t.text, fontWeight: 700, fontSize: 16, marginBottom: 12 }}>{mode === 'change' ? 'Change Password' : 'Delete Account'}</h3>
+        <div style={{ fontSize: 12, color: t.text2, marginBottom: 12 }}>Email: {email}</div>
+
+        {!otpSent ? (
+          <button onClick={requestOtp} disabled={loading} style={{ width: '100%', padding: '10px', background: 'linear-gradient(135deg,#3b82f6,#2563eb)', border: 'none', borderRadius: 10, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600 }}>{loading ? 'Sending...' : 'Send OTP'}</button>
+        ) : (
+          <>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ color: t.text2, fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 6 }}>OTP</label>
+              <input value={otp} onChange={e => setOtp(e.target.value)} style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${t.border}`, background: t.input, color: t.text, fontFamily: 'inherit' }} />
+            </div>
+            {mode === 'change' && (
+              <>
+                <div style={{ marginBottom: 10 }}>
+                  <label style={{ color: t.text2, fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 6 }}>NEW PASSWORD</label>
+                  <input type="password" value={newPass} onChange={e => setNewPass(e.target.value)} style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${t.border}`, background: t.input, color: t.text, fontFamily: 'inherit' }} />
+                </div>
+                <div style={{ marginBottom: 10 }}>
+                  <label style={{ color: t.text2, fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 6 }}>CONFIRM PASSWORD</label>
+                  <input type="password" value={confirmPass} onChange={e => setConfirmPass(e.target.value)} style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${t.border}`, background: t.input, color: t.text, fontFamily: 'inherit' }} />
+                </div>
+                {pw && (
+                  <div style={{ fontSize: 11, color: pw.color, marginBottom: 8 }}>{pw.label}</div>
+                )}
+                <button onClick={submitChange} disabled={loading} style={{ width: '100%', padding: '10px', background: 'linear-gradient(135deg,#3b82f6,#2563eb)', border: 'none', borderRadius: 10, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600 }}>{loading ? 'Saving...' : 'Change Password'}</button>
+              </>
+            )}
+            {mode === 'delete' && (
+              <>
+                <div style={{ marginBottom: 10, color: '#b91c1c', fontSize: 12 }}>This will permanently delete your account and data.</div>
+                <div style={{ marginBottom: 10 }}>
+                  <label style={{ color: t.text2, fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 6 }}>TYPE DELETE TO CONFIRM</label>
+                  <input value={confirmDelete} onChange={e => setConfirmDelete(e.target.value)} style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${t.border}`, background: t.input, color: t.text, fontFamily: 'inherit' }} />
+                </div>
+                <button onClick={submitDelete} disabled={loading} style={{ width: '100%', padding: '10px', background: '#dc2626', border: 'none', borderRadius: 10, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 700 }}>{loading ? 'Deleting...' : 'Delete Account'}</button>
+              </>
+            )}
+          </>
+        )}
+
+        {error && <div style={{ marginTop: 10, fontSize: 12, color: '#dc2626' }}>{error}</div>}
+        {success && <div style={{ marginTop: 10, fontSize: 12, color: '#16a34a' }}>{success}</div>}
+        <button onClick={onClose} style={{ marginTop: 12, width: '100%', padding: '9px', border: `1px solid ${t.border}`, borderRadius: 10, background: 'transparent', color: t.text2, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12 }}>Close</button>
       </div>
     </div>
   );
@@ -889,8 +989,7 @@ function CourseDetail({ course, onBack, t, fs }: {
 }
 
 // ── HOME TAB ──
-function HomeTab({ user, setActive, t, fs }: { user: UserProfile; setActive: (tab: Tab) => void; t: typeof themes.light; fs: number }) {
-  const streak = getStreak();
+function HomeTab({ user, setActive, t, fs, streak }: { user: UserProfile; setActive: (tab: Tab) => void; t: typeof themes.light; fs: number; streak: number }) {
   const [selectedCourse, setSelectedCourse] = useState<typeof DEFAULT_COURSES[0] | null>(null);
 
   if (selectedCourse) {
@@ -1010,11 +1109,15 @@ function TutorTab({ onTopicUpdate, currentMessages, onMessagesChange, t, fs }: {
     onMessagesChange(newMsgs); setInput(''); setLoading(true);
     try {
       const history = newMsgs.map(m => ({ role: m.role === 'ai' ? 'assistant' : m.role, content: m.text }));
-      const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: history, level, mode: 'tutor' }) });
-      const data = await res.json();
+      const res = await fetch('/api/chat', { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: history, level, mode: 'tutor' }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.reply) throw new Error(data.error || data.reply || `HTTP ${res.status}`);
       onMessagesChange([...newMsgs, { role: 'ai', text: data.reply }]);
       if (isMeaningful(q)) onTopicUpdate(q, false);
-    } catch { onMessagesChange([...newMsgs, { role: 'ai', text: 'Connection error. Check your API key.' }]); }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Connection error. Check your API key.';
+      onMessagesChange([...newMsgs, { role: 'ai', text: `API Error: ${msg}` }]);
+    }
     setLoading(false);
   };
 
@@ -1171,9 +1274,14 @@ function SummarizerTab({ t, fs, isMobile = false }: { t: typeof themes.light; fs
   const summarize = async () => {
     if (!text.trim()) return; setLoading(true); setSummary('');
     try {
-      const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'summarize', content: text, lengthInstruction: getLengthInstruction() }) });
-      const data = await res.json(); setSummary(data.reply);
-    } catch { setSummary('Error connecting to AI.'); }
+      const res = await fetch('/api/chat', { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'summarize', content: text, lengthInstruction: getLengthInstruction() }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.reply) throw new Error(data.error || data.reply || `HTTP ${res.status}`);
+      setSummary(data.reply);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Error connecting to AI.';
+      setSummary(`Error: ${msg}`);
+    }
     setLoading(false);
   };
 
@@ -1270,11 +1378,12 @@ function QuizTab({ onQuizDone, userEmail, t, fs }: { onQuizDone: (score: number,
   const [showConfetti, setShowConfetti] = useState(false);
   const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
   const [sendingEmail, setSendingEmail] = useState(false);
+  const [questionCount, setQuestionCount] = useState(5);
 
   const generate = async () => {
     if (!topic.trim()) return; setLoading(true);
     try {
-      const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'quiz', content: topic, difficulty }) });
+      const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'quiz', content: topic, difficulty, questionCount }) });
       const data = await res.json();
       const parsed = JSON.parse(data.reply.replace(/```json|```/g, '').trim());
       setQuestions(parsed.questions); setPhase('quiz');
@@ -1282,25 +1391,23 @@ function QuizTab({ onQuizDone, userEmail, t, fs }: { onQuizDone: (score: number,
     setLoading(false);
   };
 
-  const submit = () => {
+  const submit = async () => {
     const details = questions.map((q, i) => ({ q: q.q, chosen: answers[i] || 'Not answered', correct: q.answer, ok: (answers[i] || '').charAt(0) === q.answer.charAt(0), explanation: q.explanation }));
     const score = details.filter(d => d.ok).length;
     setResult({ score, total: questions.length, details }); setPhase('result');
     onQuizDone(score, questions.length, topic);
-    if (score >= 3) { setShowConfetti(true); setTimeout(() => setShowConfetti(false), 3500); }
-  };
-
-  const sendReport = async () => {
-    if (!result) return;
     setSendingEmail(true);
     try {
       await fetch('/api/quiz-report', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: userEmail, topic, score: result.score, total: result.total, details: result.details, difficulty })
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: userEmail, topic, score, total: questions.length, details, difficulty })
       });
-      alert('📧 Report sent to your email!');
-    } catch { alert('Failed to send report.'); }
+    } catch (e) {
+      console.error('Failed to auto-send quiz report', e);
+    }
     setSendingEmail(false);
+    if (score >= 3) { setShowConfetti(true); setTimeout(() => setShowConfetti(false), 3500); }
   };
 
   return (
@@ -1309,7 +1416,7 @@ function QuizTab({ onQuizDone, userEmail, t, fs }: { onQuizDone: (score: number,
       {phase === 'input' && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 18, padding: 40 }}>
           <div style={{ width: 72, height: 72, background: 'linear-gradient(135deg,#8b5cf6,#6d28d9)', borderRadius: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, boxShadow: '0 8px 24px rgba(139,92,246,0.35)', animation: 'float 3s ease-in-out infinite' }}>📋</div>
-          <div style={{ textAlign: 'center' }}><h2 style={{ fontSize: fs + 8, fontWeight: 700, color: t.text, margin: '0 0 8px' }}>Quiz Generator</h2><p style={{ fontSize: fs, color: t.text2, maxWidth: 400 }}>Enter any topic — AI generates 5 MCQ questions</p></div>
+          <div style={{ textAlign: 'center' }}><h2 style={{ fontSize: fs + 8, fontWeight: 700, color: t.text, margin: '0 0 8px' }}>Quiz Generator</h2><p style={{ fontSize: fs, color: t.text2, maxWidth: 400 }}>Enter any topic and pick question count</p></div>
 
           {/* Difficulty selector */}
           <div style={{ display: 'flex', gap: 10 }}>
@@ -1320,7 +1427,18 @@ function QuizTab({ onQuizDone, userEmail, t, fs }: { onQuizDone: (score: number,
             ))}
           </div>
 
-          <textarea value={topic} onChange={e => setTopic(e.target.value)} placeholder="e.g. Python basics, World War II, Machine Learning..." style={{ width: '100%', maxWidth: 520, height: 100, padding: 14, border: `1px solid ${t.border}`, borderRadius: 14, fontSize: fs, resize: 'none', outline: 'none', fontFamily: 'inherit', background: t.input, color: t.text }} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 520 }}>
+            <label style={{ fontSize: fs - 1, color: t.text, fontWeight: 700 }}>Number of questions</label>
+            <input
+              type="number"
+              min={1}
+              max={20}
+              value={questionCount}
+              onChange={e => setQuestionCount(Math.max(1, Math.min(20, Number(e.target.value) || 1)))}
+              style={{ width: 180, padding: '10px 12px', border: `2px solid ${t.border}`, borderRadius: 10, fontSize: fs, outline: 'none', fontFamily: 'inherit', background: t.input, color: t.text, fontWeight: 700 }}
+            />
+          </div>
+          <textarea value={topic} onChange={e => setTopic(e.target.value)} placeholder="e.g. Python basics, World War II, Machine Learning..." style={{ width: '100%', maxWidth: 520, height: 100, padding: 14, border: '3px solid rgba(139,92,246,0.45)', borderRadius: 14, fontSize: fs, resize: 'none', outline: 'none', fontFamily: 'inherit', background: t.input, color: t.text, fontWeight: 700, boxShadow: '0 8px 20px rgba(139,92,246,0.12)' }} />
           <button onClick={generate} disabled={loading || !topic.trim()} style={{ padding: '13px 36px', background: 'linear-gradient(135deg,#8b5cf6,#6d28d9)', color: '#fff', border: 'none', borderRadius: 14, cursor: 'pointer', fontSize: fs, fontWeight: 600, opacity: loading || !topic.trim() ? 0.6 : 1, fontFamily: 'inherit', boxShadow: '0 4px 16px rgba(139,92,246,0.35)' }}>{loading ? '⏳ Generating...' : '🚀 Generate Quiz'}</button>
         </div>
       )}
@@ -1354,6 +1472,7 @@ function QuizTab({ onQuizDone, userEmail, t, fs }: { onQuizDone: (score: number,
             <div style={{ fontSize: 56, animation: 'bounce 0.6s ease' }}>{result.score >= 4 ? '🏆' : result.score >= 3 ? '👍' : '📚'}</div>
             <h2 style={{ fontSize: 24, fontWeight: 700, color: t.text, margin: '8px 0 4px', animation: 'pop 0.5s ease' }}>Score: {result.score}/{result.total}</h2>
             <p style={{ fontSize: fs, color: result.score >= 4 ? '#16a34a' : result.score >= 3 ? '#d97706' : '#dc2626', fontWeight: 600 }}>{result.score >= 4 ? 'Excellent!' : result.score >= 3 ? 'Good job!' : 'Keep practicing!'}</p>
+            <p style={{ fontSize: fs - 2, color: t.text2, marginTop: 6 }}>{sendingEmail ? 'Sending report to your email...' : 'Quiz report has been sent to your email.'}</p>
             <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 12 }}>
               {Array.from({ length: result.total }).map((_, i) => <div key={i} style={{ width: 12, height: 12, borderRadius: '50%', background: i < result.score ? '#22c55e' : '#e5e7eb', animation: `pop 0.3s ease ${i * 0.1}s both` }} />)}
             </div>
@@ -1370,7 +1489,6 @@ function QuizTab({ onQuizDone, userEmail, t, fs }: { onQuizDone: (score: number,
           </div>
           <div style={{ padding: 16, borderTop: `1px solid ${t.border}`, display: 'flex', gap: 10, flexShrink: 0 }}>
             <button onClick={() => { setPhase('input'); setTopic(''); setQuestions([]); }} style={{ flex: 1, padding: '11px', border: `1px solid ${t.border}`, borderRadius: 12, background: 'transparent', cursor: 'pointer', fontSize: fs, color: t.text, fontFamily: 'inherit' }}>New Topic</button>
-            <button onClick={sendReport} disabled={sendingEmail} style={{ flex: 1, padding: '11px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 12, cursor: 'pointer', fontSize: fs, color: '#10b981', fontWeight: 600, fontFamily: 'inherit' }}>{sendingEmail ? '⏳ Sending...' : '📧 Email Report'}</button>
             <button onClick={() => { setAnswers({}); setResult(null); setPhase('quiz'); }} style={{ flex: 1, padding: '11px', background: 'linear-gradient(135deg,#8b5cf6,#6d28d9)', color: '#fff', border: 'none', borderRadius: 12, cursor: 'pointer', fontSize: fs, fontWeight: 600, fontFamily: 'inherit' }}>Retry</button>
           </div>
         </>
@@ -1382,7 +1500,7 @@ function QuizTab({ onQuizDone, userEmail, t, fs }: { onQuizDone: (score: number,
 // ── PROGRESS TAB ──
 function ProgressTab({ stats, userEmail, t, fs, isMobile = false }: { stats: TopicStat[]; userEmail: string; t: typeof themes.light; fs: number; isMobile?: boolean }) {
   const [sendingEmail, setSendingEmail] = useState(false);
-  const meaningful = stats.filter(s => { const words = s.topic.split(' '); if (words.length < 2) return false; const trivial = ['hello', 'hi', 'hey', 'yes', 'no', 'ok', 'okay', 'thanks', 'good', 'nice', 'what', 'who', 'why', 'how', 'when']; return !trivial.includes(words[0].toLowerCase()); });
+  const meaningful = stats.filter(s => s.topic?.trim().length > 0);
   const total = meaningful.reduce((a, s) => a + s.asked, 0);
   const correct = meaningful.reduce((a, s) => a + s.correct, 0);
   const pct = total ? Math.round((correct / total) * 100) : 0;
@@ -1486,13 +1604,14 @@ export default function Home() {
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [topicStats, setTopicStats] = useState<TopicStat[]>([]);
   const [streak, setStreak] = useState(0);
+  const [showStreakDebug, setShowStreakDebug] = useState(false);
+  const [streakDebug, setStreakDebug] = useState<{ streak?: number; todayKey?: string; yesterdayKey?: string; lastKey?: string; tzOffsetMinutes?: number; serverTime?: string } | null>(null);
   const [quizTopicFromHome, setQuizTopicFromHome] = useState('');
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.matchMedia('(max-width: 900px)').matches : false);
   const [showMobileNav, setShowMobileNav] = useState(false);
   const t = themes[theme];
   const fs = fontSizes[fontSize];
 
-  useEffect(() => { if (user) setStreak(updateStreak()); }, [user]);
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 900px)');
     const onChange = (e: MediaQueryListEvent) => {
@@ -1571,7 +1690,29 @@ export default function Home() {
   const handleStartQuizFromHome = (topic: string) => { setQuizTopicFromHome(topic); setActive('Quiz Generator'); };
   const handleLearnTopicFromHome = (msg: string) => { setChatMessages([{ role: 'user', text: msg }]); setActive('AI Tutor'); };
 
-  if (!user) return <AuthPage onLogin={u => { setUser(u); loadUserData(u.id); }} />;
+  useEffect(() => {
+    if (!user) return;
+    const tzOffsetMinutes = new Date().getTimezoneOffset();
+    fetch('/api/streak', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: user.id, tzOffsetMinutes }),
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (typeof d.streak === 'number') setStreak(d.streak);
+        setStreakDebug(d);
+      })
+      .catch(() => { /* ignore */ });
+  }, [user]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    setShowStreakDebug(params.get('debug') === 'streak');
+  }, []);
+
+  if (!user) return <AuthPage onLogin={u => { setUser(u); setStreak(u.streak || 1); loadUserData(u.id); }} />;
   const weakTopics = topicStats.filter(s => s.asked > 0 && s.correct / s.asked < 0.6);
 
   return (
@@ -1590,7 +1731,7 @@ export default function Home() {
         body { font-family: 'DM Sans','Segoe UI',sans-serif; background: ${t.main}; color: ${t.text}; transition: background 0.3s,color 0.3s; font-size: ${fs}px; }
         ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:#c5c9e0;border-radius:4px}
       `}</style>
-      {showProfile && <ProfileModal user={user} onUpdate={u => setUser(u)} onClose={() => setShowProfile(false)} t={t} />}
+      {showProfile && <ProfileModal user={user} onUpdate={u => setUser(u)} onClose={() => setShowProfile(false)} onDeleteAccount={signOut} t={t} />}
       {showSettings && <SettingsModal theme={theme} setTheme={setTheme} fontSize={fontSize} setFontSize={setFontSize} onClose={() => setShowSettings(false)} t={t} />}
       <div style={{ display: 'flex', height: '100dvh', overflow: 'hidden', background: t.main, position: 'relative' }}>
         {!isMobile && <Sidebar active={active} setActive={setActive} user={user} conversations={conversations} onSelectConv={handleSelectConv} selectedConv={selectedConv} onNewChat={handleNewChat} onDeleteConv={handleDeleteConv} streak={streak} />}
@@ -1623,11 +1764,16 @@ export default function Home() {
               <button onClick={() => setShowProfile(true)} style={{ width: 36, height: 36, borderRadius: '50%', border: '2px solid #3b82f6', background: 'transparent', cursor: 'pointer', fontSize: user.profilePic ? 0 : 20, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, overflow: 'hidden' }}>
                 {user.profilePic ? <img src={user.profilePic} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span>{user.avatar}</span>}
               </button>
-              <button onClick={() => { setUser(null); setChatMessages([]); setSelectedConv(null); setConversations([]); setTopicStats([]); }} style={{ padding: '7px 12px', border: `1px solid ${t.border}`, borderRadius: 10, background: 'transparent', cursor: 'pointer', fontSize: fs - 1, color: '#ef4444', fontFamily: 'inherit' }}>Sign out</button>
+              <button onClick={signOut} style={{ padding: '7px 12px', border: `1px solid ${t.border}`, borderRadius: 10, background: 'transparent', cursor: 'pointer', fontSize: fs - 1, color: '#ef4444', fontFamily: 'inherit' }}>Sign out</button>
             </div>
           </div>
+          {showStreakDebug && (
+            <div style={{ padding: isMobile ? '8px 12px' : '8px 20px', background: '#fff7ed', borderBottom: `1px solid ${t.border}`, color: '#9a3412', fontSize: 12, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace' }}>
+              {`streak=${streakDebug?.streak ?? 'n/a'} | lastKey=${streakDebug?.lastKey ?? 'n/a'} | todayKey=${streakDebug?.todayKey ?? 'n/a'} | yesterdayKey=${streakDebug?.yesterdayKey ?? 'n/a'} | tzOffsetMin=${streakDebug?.tzOffsetMinutes ?? 'n/a'} | serverTime=${streakDebug?.serverTime ?? 'n/a'}`}
+            </div>
+          )}
           <div style={{ flex: 1, padding: isMobile ? 12 : 20, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
-            {active === 'Home' && <HomeTab user={user} setActive={setActive} t={t} fs={fs} />}
+            {active === 'Home' && <HomeTab user={user} setActive={setActive} t={t} fs={fs} streak={streak} />}
             {active === 'AI Tutor' && <TutorTab onTopicUpdate={handleTopicUpdate} currentMessages={chatMessages} onMessagesChange={handleMessagesChange} t={t} fs={fs} />}
             {active === 'Notes Summarizer' && <SummarizerTab t={t} fs={fs} isMobile={isMobile} />}
             {active === 'Quiz Generator' && <QuizTab onQuizDone={handleQuizDone} userEmail={user.email} t={t} fs={fs} />}
@@ -1638,3 +1784,11 @@ export default function Home() {
     </>
   );
 }
+  const signOut = () => {
+    setUser(null);
+    setChatMessages([]);
+    setSelectedConv(null);
+    setConversations([]);
+    setTopicStats([]);
+    setStreak(0);
+  };
