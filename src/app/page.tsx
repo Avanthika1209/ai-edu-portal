@@ -1611,6 +1611,14 @@ export default function Home() {
   const [showMobileNav, setShowMobileNav] = useState(false);
   const t = themes[theme];
   const fs = fontSizes[fontSize];
+  const signOut = () => {
+    setUser(null);
+    setChatMessages([]);
+    setSelectedConv(null);
+    setConversations([]);
+    setTopicStats([]);
+    setStreak(0);
+  };
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 900px)');
@@ -1784,11 +1792,3 @@ export default function Home() {
     </>
   );
 }
-  const signOut = () => {
-    setUser(null);
-    setChatMessages([]);
-    setSelectedConv(null);
-    setConversations([]);
-    setTopicStats([]);
-    setStreak(0);
-  };
