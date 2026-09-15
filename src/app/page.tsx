@@ -6,7 +6,7 @@ type Role = 'user' | 'ai';
 type Theme = 'dark' | 'light' | 'ocean' | 'forest';
 type FontSize = 'small' | 'medium' | 'large';
 interface Message { role: Role; text: string; }
-interface Conversation { _id?: string; id?: string; title: string; messages: Message[]; updatedAt?: string; }
+interface Conversation { _id?: string; id?: string; userId?: string; title: string; messages: Message[]; updatedAt?: string; }
 interface QuizQ { q: string; options: string[]; answer: string; explanation?: string; }
 interface QuizResult { score: number; total: number; details: { q: string; chosen: string; correct: string; ok: boolean; explanation?: string }[]; }
 interface UserProfile { id: string; name: string; email: string; avatar: string; profilePic: string; purpose: string; streak?: number; }
@@ -224,6 +224,18 @@ function AuthPage({ onLogin }: { onLogin: (u: UserProfile) => void }) {
     onLogin({ ...pendingUser, purpose: skip ? '' : purpose });
   };
 
+  const enterGuestMode = () => {
+    onLogin({
+      id: 'guest',
+      name: name?.trim() || 'Guest Learner',
+      email: email?.trim() || 'guest@eduai.local',
+      avatar: '🎓',
+      profilePic: '',
+      purpose: 'General Learning & Skill Building',
+      streak: 0,
+    });
+  };
+
   if (step === 'otp') return (
     <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg,#0f172a 0%,#1e3a5f 50%,#0f172a 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'DM Sans','Segoe UI',sans-serif", padding: 20 }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@600;700;800&display=swap');@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}@keyframes pop{0%{transform:scale(0.85);opacity:0}70%{transform:scale(1.05)}100%{transform:scale(1);opacity:1}}.ainput{width:100%;padding:12px 16px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:12px;font-size:14px;color:#fff;outline:none;font-family:inherit;box-sizing:border-box;transition:border-color 0.2s}.ainput:focus{border-color:#60a5fa}.ainput::placeholder{color:rgba(255,255,255,0.3)}`}</style>
@@ -240,8 +252,11 @@ function AuthPage({ onLogin }: { onLogin: (u: UserProfile) => void }) {
             <label style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, fontWeight: 600, letterSpacing: .5, display: 'block', marginBottom: 6 }}>ENTER OTP</label>
             <input className="ainput" type="text" value={otpInput} onChange={e => setOtpInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleVerifyOtp()} placeholder="6-digit OTP" maxLength={6} style={{ letterSpacing: 8, fontSize: 20, textAlign: 'center' }} />
           </div>
-          <button onClick={handleVerifyOtp} disabled={loading || otpInput.length < 4} style={{ width: '100%', padding: '13px', background: loading ? 'rgba(59,130,246,0.5)' : 'linear-gradient(135deg,#3b82f6,#2563eb)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'inherit', marginBottom: 12 }}>
+          <button onClick={handleVerifyOtp} disabled={loading || otpInput.length < 4} style={{ width: '100%', padding: '13px', background: loading ? 'rgba(59,130,246,0.5)' : 'linear-gradient(135deg,#3b82f6,#2563eb)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'inherit', marginBottom: 10 }}>
             {loading ? 'Verifying...' : 'Verify OTP →'}
+          </button>
+          <button type="button" onClick={enterGuestMode} style={{ width: '100%', padding: '11px', background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.35)', borderRadius: 12, color: '#93c5fd', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+            ⚡ Skip & Enter Demo Mode
           </button>
           <button onClick={() => { setStep('auth'); setError(''); setSuccess(''); }} style={{ width: '100%', padding: '10px', background: 'transparent', color: 'rgba(255,255,255,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>← Back</button>
         </div>
@@ -312,6 +327,37 @@ function AuthPage({ onLogin }: { onLogin: (u: UserProfile) => void }) {
               {loading ? 'Please wait...' : (mode === 'login' ? 'Login →' : 'Send OTP →')}
             </button>
           </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '18px 0 12px' }}>
+            <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.1)' }} />
+            <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, fontWeight: 600, letterSpacing: 0.5 }}>OR</span>
+            <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.1)' }} />
+          </div>
+
+          <button
+            type="button"
+            onClick={enterGuestMode}
+            style={{
+              width: '100%',
+              padding: '12px',
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid rgba(255,255,255,0.16)',
+              borderRadius: 12,
+              color: '#93c5fd',
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              transition: 'background 0.2s, border-color 0.2s',
+            }}
+          >
+            <span>🚀</span> Try Demo Mode (Continue as Guest)
+          </button>
+
           <p style={{ textAlign: 'center', color: 'rgba(255,255,255,0.35)', fontSize: 13, marginTop: 18 }}>
             {mode === 'login' ? "No account? " : "Have account? "}
             <span onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); }} style={{ color: '#60a5fa', cursor: 'pointer', fontWeight: 600 }}>{mode === 'login' ? 'Create Account' : 'Login'}</span>
@@ -365,9 +411,19 @@ function ProfileModal({ user, onUpdate, onClose, onDeleteAccount, t }: { user: U
   const handleSave = async () => {
     setSaving(true);
     try {
-      const res = await fetch('/api/user', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: user.id, name, avatar, profilePic }) });
-      const data = await res.json();
-      if (!data.error) onUpdate({ ...user, name, avatar: data.avatar, profilePic: data.profilePic });
+      if (user.id === 'guest') {
+        const updated = { ...user, name, avatar, profilePic };
+        onUpdate(updated);
+        try { localStorage.setItem('eduai_active_user', JSON.stringify(updated)); } catch {}
+      } else {
+        const res = await fetch('/api/user', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: user.id, name, avatar, profilePic }) });
+        const data = await res.json();
+        if (!data.error) {
+          const updated = { ...user, name, avatar: data.avatar, profilePic: data.profilePic };
+          onUpdate(updated);
+          try { localStorage.setItem('eduai_active_user', JSON.stringify(updated)); } catch {}
+        }
+      }
     } catch { console.error('Failed to save profile'); }
     setSaving(false);
     onClose();
@@ -416,13 +472,19 @@ function ProfileModal({ user, onUpdate, onClose, onDeleteAccount, t }: { user: U
           <button onClick={onClose} style={{ flex: 1, padding: '11px', border: `1px solid ${t.border}`, borderRadius: 10, background: 'transparent', color: t.text2, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>Cancel</button>
           <button onClick={handleSave} disabled={saving} style={{ flex: 1, padding: '11px', background: 'linear-gradient(135deg,#3b82f6,#2563eb)', border: 'none', borderRadius: 10, color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600 }}>{saving ? 'Saving...' : 'Save'}</button>
         </div>
-        <div style={{ marginTop: 18, paddingTop: 14, borderTop: `1px solid ${t.border}` }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: t.text2, marginBottom: 8 }}>SECURITY</div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => setSecurityMode('change')} style={{ flex: 1, padding: '10px', border: `1px solid ${t.border}`, borderRadius: 10, background: t.bg3, cursor: 'pointer', fontSize: 12, color: t.text, fontFamily: 'inherit' }}>Change Password</button>
-            <button onClick={() => setSecurityMode('delete')} style={{ flex: 1, padding: '10px', border: '1px solid #fecaca', borderRadius: 10, background: '#fef2f2', cursor: 'pointer', fontSize: 12, color: '#dc2626', fontFamily: 'inherit', fontWeight: 600 }}>Delete Account</button>
+        {user.id !== 'guest' ? (
+          <div style={{ marginTop: 18, paddingTop: 14, borderTop: `1px solid ${t.border}` }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: t.text2, marginBottom: 8 }}>SECURITY</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => setSecurityMode('change')} style={{ flex: 1, padding: '10px', border: `1px solid ${t.border}`, borderRadius: 10, background: t.bg3, cursor: 'pointer', fontSize: 12, color: t.text, fontFamily: 'inherit' }}>Change Password</button>
+              <button onClick={() => setSecurityMode('delete')} style={{ flex: 1, padding: '10px', border: '1px solid #fecaca', borderRadius: 10, background: '#fef2f2', cursor: 'pointer', fontSize: 12, color: '#dc2626', fontFamily: 'inherit', fontWeight: 600 }}>Delete Account</button>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${t.border}`, textAlign: 'center' }}>
+            <span style={{ fontSize: 12, color: '#60a5fa', fontWeight: 500 }}>⚡ Demo Mode (Guest Account)</span>
+          </div>
+        )}
       </div>
       {securityMode && (
         <SecurityModal
@@ -614,7 +676,7 @@ function Sidebar({ active, setActive, user, conversations, onSelectConv, selecte
         <div style={{ width: 34, height: 34, background: 'linear-gradient(135deg,#3b82f6,#8b5cf6)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17, flexShrink: 0 }}>🎓</div>
         <div style={{ flex: 1 }}>
           <div style={{ color: '#ffffff', fontWeight: 700, fontSize: 13, fontFamily: "'Outfit',sans-serif" }}>EduAI Portal</div>
-          <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10 }}>{PURPOSES.find(p => p.id === user.purpose)?.label || 'Learning'}</div>
+          <div style={{ color: user.id === 'guest' ? '#60a5fa' : 'rgba(255,255,255,0.4)', fontSize: 10, fontWeight: user.id === 'guest' ? 600 : 400 }}>{user.id === 'guest' ? '⚡ Demo Mode' : (PURPOSES.find(p => p.id === user.purpose)?.label || 'Learning')}</div>
         </div>
         {/* Streak */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 3, background: 'rgba(251,146,60,0.15)', border: '1px solid rgba(251,146,60,0.3)', borderRadius: 8, padding: '3px 7px' }}>
@@ -1618,6 +1680,7 @@ export default function Home() {
     setConversations([]);
     setTopicStats([]);
     setStreak(0);
+    try { localStorage.removeItem('eduai_active_user'); } catch {}
   };
 
   useEffect(() => {
@@ -1631,6 +1694,15 @@ export default function Home() {
   }, []);
 
   const loadUserData = useCallback(async (userId: string) => {
+    if (userId === 'guest') {
+      try {
+        const localConvs = localStorage.getItem('eduai_guest_convs');
+        const localProg = localStorage.getItem('eduai_guest_progress');
+        if (localConvs) setConversations(JSON.parse(localConvs));
+        if (localProg) setTopicStats(JSON.parse(localProg));
+      } catch (e) { console.error('Local load error', e); }
+      return;
+    }
     try {
       const [convRes, progRes] = await Promise.all([fetch(`/api/conversations?userId=${userId}`), fetch(`/api/progress?userId=${userId}`)]);
       const convs = await convRes.json(); const prog = await progRes.json();
@@ -1638,6 +1710,22 @@ export default function Home() {
       if (Array.isArray(prog)) setTopicStats(prog);
     } catch (e) { console.error('Load error', e); }
   }, []);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('eduai_active_user');
+      if (saved) {
+        const u = JSON.parse(saved);
+        if (u.id === 'guest' && u.streak === 3) {
+          u.streak = 0;
+          try { localStorage.setItem('eduai_active_user', JSON.stringify(u)); } catch {}
+        }
+        setUser(u);
+        setStreak(u.streak ?? 0);
+        loadUserData(u.id);
+      }
+    } catch {}
+  }, [loadUserData]);
 
   const generateTitle = async (msgs: Message[]): Promise<string> => {
     try {
@@ -1653,6 +1741,20 @@ export default function Home() {
     try {
       let title = 'New conversation';
       if (!convId) { title = await generateTitle(msgs); } else { const existing = conversations.find(c => (c._id || c.id) === convId); title = existing?.title || await generateTitle(msgs); }
+
+      if (userId === 'guest') {
+        const currentId = convId || `guest_${Date.now()}`;
+        const newConv: Conversation = { id: currentId, _id: currentId, userId, title, messages: msgs, updatedAt: new Date().toISOString() };
+        setConversations(prev => {
+          const exists = prev.find(c => (c._id || c.id) === currentId);
+          const updated = exists ? prev.map(c => (c._id || c.id) === currentId ? newConv : c) : [newConv, ...prev];
+          try { localStorage.setItem('eduai_guest_convs', JSON.stringify(updated)); } catch {}
+          return updated;
+        });
+        if (!convId) setSelectedConv(currentId);
+        return;
+      }
+
       const res = await fetch('/api/conversations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, title, messages: msgs, convId }) });
       const saved = await res.json(); const savedId = saved._id || saved.id;
       setConversations(prev => { const exists = prev.find(c => (c._id || c.id) === savedId || (c._id || c.id) === convId); if (exists) return prev.map(c => (c._id || c.id) === savedId || (c._id || c.id) === convId ? { ...saved } : c); return [...prev, saved]; });
@@ -1661,6 +1763,10 @@ export default function Home() {
   }, [conversations]);
 
   const saveProgress = useCallback(async (stats: TopicStat[], userId: string) => {
+    if (userId === 'guest') {
+      try { localStorage.setItem('eduai_guest_progress', JSON.stringify(stats)); } catch {}
+      return;
+    }
     try { await fetch('/api/progress', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, stats }) }); }
     catch (e) { console.error('Save progress error', e); }
   }, []);
@@ -1689,17 +1795,30 @@ export default function Home() {
   const handleNewChat = useCallback(() => { setChatMessages([]); setSelectedConv(null); }, []);
   const handleDeleteConv = useCallback(async (id: string) => {
     try {
+      if (user?.id === 'guest') {
+        setConversations(prev => {
+          const updated = prev.filter(c => (c._id || c.id) !== id);
+          try { localStorage.setItem('eduai_guest_convs', JSON.stringify(updated)); } catch {}
+          return updated;
+        });
+        if (selectedConv === id) { setChatMessages([]); setSelectedConv(null); }
+        return;
+      }
       await fetch('/api/conversations', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
       setConversations(prev => prev.filter(c => (c._id || c.id) !== id));
       if (selectedConv === id) { setChatMessages([]); setSelectedConv(null); }
     } catch (e) { console.error('Delete error', e); }
-  }, [selectedConv]);
+  }, [selectedConv, user]);
 
   const handleStartQuizFromHome = (topic: string) => { setQuizTopicFromHome(topic); setActive('Quiz Generator'); };
   const handleLearnTopicFromHome = (msg: string) => { setChatMessages([{ role: 'user', text: msg }]); setActive('AI Tutor'); };
 
   useEffect(() => {
     if (!user) return;
+    if (user.id === 'guest') {
+      setStreak(user.streak ?? 0);
+      return;
+    }
     const tzOffsetMinutes = new Date().getTimezoneOffset();
     fetch('/api/streak', {
       method: 'POST',
@@ -1720,7 +1839,14 @@ export default function Home() {
     setShowStreakDebug(params.get('debug') === 'streak');
   }, []);
 
-  if (!user) return <AuthPage onLogin={u => { setUser(u); setStreak(u.streak || 1); loadUserData(u.id); }} />;
+  const handleLogin = (u: UserProfile) => {
+    setUser(u);
+    setStreak(u.streak ?? 0);
+    loadUserData(u.id);
+    try { localStorage.setItem('eduai_active_user', JSON.stringify(u)); } catch {}
+  };
+
+  if (!user) return <AuthPage onLogin={handleLogin} />;
   const weakTopics = topicStats.filter(s => s.asked > 0 && s.correct / s.asked < 0.6);
 
   return (

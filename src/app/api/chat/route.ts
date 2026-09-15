@@ -51,7 +51,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid request: unsupported mode or missing input.' }, { status: 400 });
     }
 
-    const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+    const models = [
+      'qwen/qwen3.8-27b',
+      'groq/compound-mini',
+      'qwen/qwen3.6-27b',
+      'groq/compound',
+    ];
     let response: Awaited<ReturnType<typeof groq.chat.completions.create>> | null = null;
     let lastErr: unknown = null;
     for (const model of models) {
@@ -59,7 +64,7 @@ export async function POST(req: NextRequest) {
         response = await groq.chat.completions.create({
           model,
           messages: chatMessages,
-          max_tokens: mode === 'title' ? 20 : 1500,
+          max_tokens: mode === 'title' ? 40 : 1500,
           temperature: mode === 'title' ? 0.3 : 0.7,
         });
         break;
@@ -69,7 +74,8 @@ export async function POST(req: NextRequest) {
     }
     if (!response) throw lastErr || new Error('No response from Groq API');
 
-    const text = response.choices[0]?.message?.content || '';
+    let text = response.choices[0]?.message?.content || '';
+    text = text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
     if (!text.trim()) {
       return NextResponse.json({ error: 'AI returned an empty response. Please retry.' }, { status: 502 });
     }
