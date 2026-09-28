@@ -8,13 +8,7 @@ export async function POST(req: NextRequest) {
   try {
     await connectDB();
     const body = await req.json();
-    const { name, email, password, avatar, purpose, tzOffsetMinutes = 0 } = body;
-
-    const toDateKey = (ts: number, offset: number) => {
-      const local = new Date(ts - offset * 60000);
-      return local.toISOString().slice(0, 10);
-    };
-    const todayKey = toDateKey(Date.now(), tzOffsetMinutes);
+    const { name, email, password, avatar, purpose } = body;
 
     if (!email || !password) {
       return NextResponse.json({ error: 'Email and password required' }, { status: 400 });
@@ -36,9 +30,6 @@ export async function POST(req: NextRequest) {
       password: hashed,
       avatar: avatar || '🧑',
       purpose: purpose || '',
-      streak: 1,
-      streakLastDate: new Date(),
-      streakLastDateKey: todayKey,
     });
     await user.save();
 
@@ -84,7 +75,6 @@ export async function POST(req: NextRequest) {
       email: user.email,
       avatar: user.avatar,
       purpose: user.purpose,
-      streak: user.streak || 1,
     });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);

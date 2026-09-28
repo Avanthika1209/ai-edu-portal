@@ -9,16 +9,44 @@ function toDateKey(ts: number, tzOffsetMinutes: number) {
 
 export async function POST(req: NextRequest) {
   try {
-    await connectDB();
     const body = await req.json();
     const { userId, tzOffsetMinutes = 0 } = body;
     if (!userId) return NextResponse.json({ error: 'userId required' }, { status: 400 });
 
-    const user = await User.findById(userId);
-    if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
-
     const todayKey = toDateKey(Date.now(), tzOffsetMinutes);
     const yesterdayKey = toDateKey(Date.now() - 86400000, tzOffsetMinutes);
+
+    let dbConnected = false;
+    try {
+      await connectDB();
+      dbConnected = true;
+    } catch {
+      // offline fallback
+    }
+
+    if (!dbConnected) {
+      return NextResponse.json({
+        streak: 1,
+        todayKey,
+        yesterdayKey,
+        lastKey: todayKey,
+        tzOffsetMinutes,
+        serverTime: new Date().toISOString(),
+      });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return NextResponse.json({
+        streak: 1,
+        todayKey,
+        yesterdayKey,
+        lastKey: todayKey,
+        tzOffsetMinutes,
+        serverTime: new Date().toISOString(),
+      });
+    }
+
     const lastKey = user.streakLastDateKey
       ? user.streakLastDateKey
       : (user.streakLastDate ? toDateKey(new Date(user.streakLastDate).getTime(), tzOffsetMinutes) : '');
@@ -46,7 +74,6 @@ export async function POST(req: NextRequest) {
       serverTime: new Date().toISOString(),
     });
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json({ streak: 1 });
   }
 }

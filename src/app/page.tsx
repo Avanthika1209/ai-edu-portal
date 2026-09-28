@@ -1,7 +1,9 @@
 'use client';
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { AnimationTab } from '../components/animation/AnimationTab';
+import { AnalyticsCharts } from '../components/animation/AnalyticsCharts';
 
-type Tab = 'Home' | 'AI Tutor' | 'Notes Summarizer' | 'Quiz Generator' | 'Progress Tracker';
+type Tab = 'Home' | 'AI Tutor' | 'Notes Summarizer' | 'Quiz Generator' | 'Progress Tracker' | 'Animation';
 type Role = 'user' | 'ai';
 type Theme = 'dark' | 'light' | 'ocean' | 'forest';
 type FontSize = 'small' | 'medium' | 'large';
@@ -225,6 +227,10 @@ function AuthPage({ onLogin }: { onLogin: (u: UserProfile) => void }) {
   };
 
   const enterGuestMode = () => {
+    try {
+      localStorage.removeItem('eduai_guest_convs');
+      localStorage.removeItem('eduai_guest_progress');
+    } catch {}
     onLogin({
       id: 'guest',
       name: name?.trim() || 'Guest Learner',
@@ -667,6 +673,7 @@ function Sidebar({ active, setActive, user, conversations, onSelectConv, selecte
     { id: 'AI Tutor' as Tab, icon: '🤖', label: 'AI Tutor' },
     { id: 'Notes Summarizer' as Tab, icon: '📄', label: 'Summarizer' },
     { id: 'Quiz Generator' as Tab, icon: '📋', label: 'Quiz' },
+    { id: 'Animation' as Tab, icon: '🧪', label: 'Animation' },
     { id: 'Progress Tracker' as Tab, icon: '📊', label: 'Progress' },
   ];
   return (
@@ -711,7 +718,12 @@ function Sidebar({ active, setActive, user, conversations, onSelectConv, selecte
                   <div style={{ fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,0.85)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{conv.title}</div>
                   <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 3 }}>{conv.updatedAt ? timeAgo(conv.updatedAt) : ''} · {conv.messages.length} msgs</div>
                 </button>
-                <button onClick={() => onDeleteConv(cid)} style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', width: 20, height: 20, borderRadius: 5, border: 'none', background: 'transparent', cursor: 'pointer', color: 'rgba(255,255,255,0.3)', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>×</button>
+                <button
+                  onClick={() => onDeleteConv(cid)}
+                  aria-label={`Delete conversation: ${conv.title}`}
+                  title="Delete conversation"
+                  style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', width: 20, height: 20, borderRadius: 5, border: 'none', background: 'transparent', cursor: 'pointer', color: 'rgba(255,255,255,0.3)', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                >×</button>
               </div>
             );
           })}
@@ -1080,7 +1092,7 @@ function HomeTab({ user, setActive, t, fs, streak }: { user: UserProfile; setAct
       <div>
         <h3 style={{ fontSize: fs + 1, fontWeight: 700, color: t.text, marginBottom: 12 }}>Quick Actions</h3>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          {([{ icon: '🤖', label: 'Ask AI Tutor', tab: 'AI Tutor' as Tab, color: '#3b82f6' },{ icon: '📋', label: 'Take a Quiz', tab: 'Quiz Generator' as Tab, color: '#8b5cf6' },{ icon: '📄', label: 'Summarize Notes', tab: 'Notes Summarizer' as Tab, color: '#10b981' },{ icon: '📊', label: 'View Progress', tab: 'Progress Tracker' as Tab, color: '#f59e0b' }]).map(a => (
+          {([{ icon: '🤖', label: 'Ask AI Tutor', tab: 'AI Tutor' as Tab, color: '#3b82f6' },{ icon: '📋', label: 'Take a Quiz', tab: 'Quiz Generator' as Tab, color: '#8b5cf6' },{ icon: '📄', label: 'Summarize Notes', tab: 'Notes Summarizer' as Tab, color: '#10b981' },{ icon: '🧪', label: 'Explore Animations', tab: 'Animation' as Tab, color: '#ef4444' },{ icon: '📊', label: 'View Progress', tab: 'Progress Tracker' as Tab, color: '#f59e0b' }]).map(a => (
             <button key={a.tab} onClick={() => setActive(a.tab)} style={{ padding: '16px', background: t.bg3, border: `1px solid ${t.border}`, borderRadius: 14, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: 10 }}>
               <div style={{ width: 38, height: 38, background: `${a.color}20`, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>{a.icon}</div>
               <span style={{ fontSize: fs, fontWeight: 600, color: t.text }}>{a.label}</span>
@@ -1615,6 +1627,7 @@ function ProgressTab({ stats, userEmail, t, fs, isMobile = false }: { stats: Top
           </div>
         </div>
       </div>
+      <AnalyticsCharts stats={meaningful} t={t} fs={fs} isMobile={isMobile} />
       {meaningful.filter(s => s.asked > 0).length > 0 && (
         <div style={{ background: t.card, borderRadius: 20, padding: 22, border: `1px solid ${t.border}` }}>
           <h3 style={{ fontSize: fs + 1, fontWeight: 700, color: t.text, marginBottom: 18 }}>📚 Topics You Explored</h3>
@@ -1674,13 +1687,17 @@ export default function Home() {
   const t = themes[theme];
   const fs = fontSizes[fontSize];
   const signOut = () => {
+    try {
+      localStorage.removeItem('eduai_active_user');
+      localStorage.removeItem('eduai_guest_convs');
+      localStorage.removeItem('eduai_guest_progress');
+    } catch {}
     setUser(null);
     setChatMessages([]);
     setSelectedConv(null);
     setConversations([]);
     setTopicStats([]);
     setStreak(0);
-    try { localStorage.removeItem('eduai_active_user'); } catch {}
   };
 
   useEffect(() => {
@@ -1794,6 +1811,9 @@ export default function Home() {
   const handleSelectConv = useCallback((conv: Conversation) => { setChatMessages(conv.messages); setSelectedConv(conv._id || conv.id || null); }, []);
   const handleNewChat = useCallback(() => { setChatMessages([]); setSelectedConv(null); }, []);
   const handleDeleteConv = useCallback(async (id: string) => {
+    const conversation = conversations.find(c => (c._id || c.id) === id);
+    if (!conversation || !window.confirm(`Delete "${conversation.title}"? This cannot be undone.`)) return;
+
     try {
       if (user?.id === 'guest') {
         setConversations(prev => {
@@ -1804,7 +1824,8 @@ export default function Home() {
         if (selectedConv === id) { setChatMessages([]); setSelectedConv(null); }
         return;
       }
-      await fetch('/api/conversations', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+      const res = await fetch('/api/conversations', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, userId: user?.id }) });
+      if (!res.ok) throw new Error('Delete request failed');
       setConversations(prev => prev.filter(c => (c._id || c.id) !== id));
       if (selectedConv === id) { setChatMessages([]); setSelectedConv(null); }
     } catch (e) { console.error('Delete error', e); }
@@ -1842,6 +1863,12 @@ export default function Home() {
   const handleLogin = (u: UserProfile) => {
     setUser(u);
     setStreak(u.streak ?? 0);
+    setChatMessages([]);
+    setSelectedConv(null);
+    if (u.id === 'guest') {
+      setConversations([]);
+      setTopicStats([]);
+    }
     loadUserData(u.id);
     try { localStorage.setItem('eduai_active_user', JSON.stringify(u)); } catch {}
   };
@@ -1911,6 +1938,7 @@ export default function Home() {
             {active === 'AI Tutor' && <TutorTab onTopicUpdate={handleTopicUpdate} currentMessages={chatMessages} onMessagesChange={handleMessagesChange} t={t} fs={fs} />}
             {active === 'Notes Summarizer' && <SummarizerTab t={t} fs={fs} isMobile={isMobile} />}
             {active === 'Quiz Generator' && <QuizTab onQuizDone={handleQuizDone} userEmail={user.email} t={t} fs={fs} />}
+            {active === 'Animation' && <AnimationTab onTopicUpdate={handleTopicUpdate} onQuizDone={handleQuizDone} userEmail={user.email} t={t} fs={fs} isMobile={isMobile} />}
             {active === 'Progress Tracker' && <ProgressTab stats={topicStats} userEmail={user.email} t={t} fs={fs} isMobile={isMobile} />}
           </div>
         </main>

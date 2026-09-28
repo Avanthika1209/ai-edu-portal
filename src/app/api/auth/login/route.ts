@@ -3,17 +3,11 @@ import bcrypt from 'bcryptjs';
 import { connectDB } from '@/lib/mongodb';
 import User from '@/models/User';
 
-function toDateKey(ts: number, tzOffsetMinutes: number) {
-  // tzOffsetMinutes: same as Date.getTimezoneOffset()
-  const local = new Date(ts - tzOffsetMinutes * 60000);
-  return local.toISOString().slice(0, 10);
-}
-
 export async function POST(req: NextRequest) {
   try {
     await connectDB();
     const body = await req.json();
-    const { email, password, tzOffsetMinutes = 0 } = body;
+    const { email, password } = body;
 
     if (!email || !password) {
       return NextResponse.json({ error: 'Email and password required' }, { status: 400 });
@@ -29,25 +23,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Incorrect password' }, { status: 401 });
     }
 
-    // Update streak on login (UTC day-based)
-    const todayKey = toDateKey(Date.now(), tzOffsetMinutes);
-    const lastKey = user.streakLastDateKey
-      ? user.streakLastDateKey
-      : (user.streakLastDate ? toDateKey(new Date(user.streakLastDate).getTime(), tzOffsetMinutes) : '');
-    const yesterdayKey = toDateKey(Date.now() - 86400000, tzOffsetMinutes);
-    let streak = user.streak || 0;
-    if (lastKey === todayKey) {
-      // keep streak
-    } else if (lastKey === yesterdayKey) {
-      streak = streak + 1;
-    } else {
-      streak = 1;
-    }
-    user.streak = streak;
-    user.streakLastDate = new Date();
-    user.streakLastDateKey = todayKey;
-    await user.save();
-
     return NextResponse.json({
       id: user._id.toString(),
       name: user.name,
@@ -55,7 +30,6 @@ export async function POST(req: NextRequest) {
       avatar: user.avatar || '🧑',
       profilePic: user.profilePic || '',
       purpose: user.purpose || '',
-      streak,
     });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
